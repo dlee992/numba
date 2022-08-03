@@ -113,9 +113,9 @@ class TestDataFrameRefUsage(unittest.TestCase):
         rows, cols = 100000, 100
         values = np.arange(rows * cols, dtype=np.int64).reshape((rows, cols))
         index = [i+1 for i in range(rows)]
-        columns = [i for i in range(cols)]
+        columns = ['c' + str(i) for i in range(cols)]
 
-        pd_df = pd.DataFrame(values, index, columns)
+        pd_df = pd.DataFrame(values, index=index, columns=columns)
 
         start = time.time()
         box_df = check_box(pd_df)
