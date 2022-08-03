@@ -7,9 +7,7 @@ import pandas as pd
 
 from numba import njit, jit
 from numba.experimental import structref
-from numba.experimental.dataframeproxy import DataFrameProxy
-from numba.experimental.dataframeref import DataFrameRef
-
+from numba.experimental.dataframeref import DataFrameRef, DataFrameProxy
 
 # os.environ['NUMBA_DEBUG_TYPEINFER'] = "1"
 # os.environ['NUMBA_DUMP_SSA'] = "1"
@@ -122,39 +120,6 @@ class TestDataFrameRefUsage(unittest.TestCase):
         start = time.time()
         box_df = check_box(pd_df)
         print(f"njit & box time: {time.time() - start}")
-
-    def test_get_values_inner(self):
-        @njit
-        def check_values(values, index, columns):
-            dfp = DataFrameProxy(values, index, columns)
-            values_2 = dfp.values
-            return values_2
-
-        values = self.values
-        index = self.index
-        columns = self.columns
-
-        values_2 = check_values(values, index, columns)
-
-    def test_get_index_outer(self):
-        @jit
-        def check_index(dfp_out):
-            index_out = dfp_out.index
-            return index_out
-
-        values = self.values
-        index = self.index
-        columns = self.columns
-        dfp = DataFrameProxy(values, index, columns)
-        iout = check_index(dfp)
-
-    def test_llvm_ir(self):
-        @jit
-        def add(a, b):
-            return a + b
-
-        a, b = 1, 2
-        c = add(a, b)
 
 
 if __name__ == "__main__":

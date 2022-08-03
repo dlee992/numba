@@ -6,13 +6,18 @@ from numba import types, TypingError
 from numba.core.extending import overload_method
 from numba.core.pythonapi import NativeValue, unbox, box
 from numba.experimental import structref
-from numba.experimental.dataframeproxy import DataFrameProxy
 from numba.extending import typeof_impl
 
 
 @structref.register
 class DataFrameRef(types.StructRef):
     pass
+
+
+# almost empty class body, since do not use it in interpreter mode
+class DataFrameProxy(structref.StructRefProxy):
+    def __new__(cls, values, index, columns):
+        return structref.StructRefProxy.__new__(cls, values, index, columns)
 
 
 @typeof_impl.register(pd.DataFrame)
@@ -29,8 +34,8 @@ def _unbox_attr_to_tuple(obj, attr_name, c):
     py_attr_list = c.pyapi.call_method(py_attr, "to_list")
     py_attr_tuple = c.pyapi.sequence_tuple(py_attr_list)
 
-    # c.pyapi.decref(py_attr)
-    # c.pyapi.decref(py_attr_list)
+    c.pyapi.decref(py_attr)
+    c.pyapi.decref(py_attr_list)
 
     return py_attr_tuple
 
@@ -48,8 +53,9 @@ def unbox_dataframe(typ, obj, c):
     py_index = _unbox_attr_to_tuple(py_df, "index", c)
     py_columns = _unbox_attr_to_tuple(py_df, "columns", c)
 
+    # TODO: directly call DFP, rather than insert a module
     dfp_name = c.context.insert_const_string(
-        c.builder.module, "numba.experimental.dataframeproxy")
+        c.builder.module, "numba.experimental.dataframeref")
     dfp_mod = c.pyapi.import_module_noblock(dfp_name)
     py_df_proxy = c.pyapi.call_method(
         dfp_mod,
@@ -67,23 +73,17 @@ def unbox_dataframe(typ, obj, c):
     struct_ref = utils.new_struct_ref(mi)
     out = struct_ref._getvalue()
 
-    # c.pyapi.decref(py_df_proxy)
-    # c.pyapi.decref(py_values)
-    # c.pyapi.decref(py_index)
-    # c.pyapi.decref(py_columns)
+    c.pyapi.decref(py_df_proxy)
+    c.pyapi.decref(py_values)
+    c.pyapi.decref(py_index)
+    c.pyapi.decref(py_columns)
 
-    # c.pyapi.decref(mi_obj)
-
-    # fake a simple value
-    # py_df = obj
-    # py_values = c.pyapi.object_getattr_string(obj, "values")
-    # py_ndim = c.pyapi.object_getattr_string(py_values, "ndim")
-    # out = c.pyapi.number_long(py_ndim)
+    c.pyapi.decref(dfp_mod)
+    c.pyapi.decref(mi_obj)
 
     return NativeValue(out)
 
 
-# @box(DataFrameRef)
 def box_struct_ref(typ, val, c):
     """
     Convert a raw pointer to a Python int.
@@ -101,9 +101,11 @@ def box_struct_ref(typ, val, c):
 
     res = c.pyapi.call_function_objargs(ctor_pyfunc,
         [ty_pyobj, boxed_meminfo], )
+
     c.pyapi.decref(ctor_pyfunc)
     c.pyapi.decref(ty_pyobj)
     c.pyapi.decref(boxed_meminfo)
+
     return res
 
 
@@ -126,17 +128,7 @@ def box_dataframe(typ, val, c):
         return box_struct_ref(typ, val, c)
 
     utils = structref._Utils(c.context, c.builder, typ)
-    # ref = utils.get_struct_ref(val)
-    # data_ptr = utils.get_data_pointer(val)
     data_struct = utils.get_data_struct(val)
-
-    # meminfo = ref.meminfo
-    # data = c.context.nrt.meminfo_data(c.builder, meminfo)
-    # data_struct = utils.get_data_struct(data)
-
-    # values = getattr(data_struct, "values")
-    # index = getattr(data_struct, "index")
-    # columns = getattr(data_struct, "columns")
 
     values = _get_data_struct_attr(c, typ, data_struct, "values")
     index = _get_data_struct_attr(c, typ, data_struct, "index")
@@ -149,23 +141,16 @@ def box_dataframe(typ, val, c):
     pandas_mod_name = c.context.insert_const_string(c.builder.module, "pandas")
     pandas_mod = c.pyapi.import_module_noblock(pandas_mod_name)
 
-    # return py_values
-
     py_df = c.pyapi.call_method(
         pandas_mod,
         "DataFrame",
         (py_values, py_index, py_columns),
     )
 
-    # c.pyapi.decref(ctor_pyfunc)
-    # c.pyapi.decref(ty_pyobj)
-    # c.pyapi.decref(py_meminfo)
-
-    # c.pyapi.decref(pandas_mod)
-    # c.pyapi.decref(py_values)
-    # c.pyapi.decref(py_index)
-    # c.pyapi.decref(py_columns)
-    # c.pyapi.decref(py_df_proxy)
+    c.pyapi.decref(py_values)
+    c.pyapi.decref(py_index)
+    c.pyapi.decref(py_columns)
+    c.pyapi.decref(pandas_mod)
 
     return py_df
 
