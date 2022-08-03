@@ -110,7 +110,7 @@ class TestDataFrameRefUsage(unittest.TestCase):
         # columns = self.columns
 
         # generate large df
-        rows, cols = 10, 10
+        rows, cols = 100000, 100
         values = np.arange(rows * cols, dtype=np.int64).reshape((rows, cols))
         index = [i+1 for i in range(rows)]
         columns = [i for i in range(cols)]

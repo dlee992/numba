@@ -23,21 +23,25 @@ class DataFrameProxy(structref.StructRefProxy):
 @typeof_impl.register(pd.DataFrame)
 def _typeof_dataframe(obj, c):
     values_ty = typeof_impl(obj.values, c)
-    index_ty = typeof_impl(tuple(obj.index.to_list()), c)
-    columns_ty = typeof_impl(tuple(obj.columns.to_list()), c)
+    # index_ty = typeof_impl(tuple(obj.index.to_list()), c)
+    # columns_ty = typeof_impl(tuple(obj.columns.to_list()), c)
+    index_ty = typeof_impl(obj.index.to_numpy(), c)
+    columns_ty = typeof_impl(obj.columns.to_numpy(), c)
     fields = [('values', values_ty), ('index', index_ty), ('columns', columns_ty)]
     return DataFrameRef(fields)
 
 
 def _unbox_attr_to_tuple(obj, attr_name, c):
     py_attr = c.pyapi.object_getattr_string(obj, attr_name)
-    py_attr_list = c.pyapi.call_method(py_attr, "to_list")
-    py_attr_tuple = c.pyapi.sequence_tuple(py_attr_list)
+    # py_attr_list = c.pyapi.call_method(py_attr, "to_list")
+    # py_attr_tuple = c.pyapi.sequence_tuple(py_attr_list)
+    py_attr_arr = c.pyapi.call_method(py_attr, "to_numpy")
 
     c.pyapi.decref(py_attr)
-    c.pyapi.decref(py_attr_list)
+    # c.pyapi.decref(py_attr_list)
 
-    return py_attr_tuple
+    return py_attr_arr
+    # return py_attr_tuple
 
 
 @unbox(DataFrameRef)
