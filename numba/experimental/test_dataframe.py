@@ -1,6 +1,5 @@
 import os
 import time
-import unittest
 
 import numpy as np
 import pandas as pd
@@ -14,6 +13,9 @@ from numba.experimental.dataframeref import DataFrameRef, DataFrameProxy
 # os.environ['NUMBA_DEBUG_JIT'] = "1"
 # os.environ['NUMBA_FULL_TRACEBACKS'] = "1"
 # os.environ['NUMBA_TRACE'] = "1"
+from numba.tests.support import MemoryLeakMixin
+from numba.tests.test_runtests import TestCase
+
 os.environ['NUMBA_DUMP_OPTIMIZED'] = "1"
 # os.environ['NUMBA_DUMP_FUNC_OPT'] = "1"
 # os.environ['NUMBA_OPT'] = "0"
@@ -33,9 +35,10 @@ def print_df(df):
     print(f"\nvalues={df.values}\nindex={df.index}\ncolumns={df.columns}")
 
 
-class TestDataFrameRefUsage(unittest.TestCase):
+class TestDataFrameRefUsage(MemoryLeakMixin, TestCase):
 
     def setUp(self):
+        super().setUp()
         self.values = np.arange(10, dtype=np.int64).reshape((2, 5))
         self.index = (0, 1)
         # self.columns = tuple(list(string.ascii_lowercase)[:5])
@@ -113,7 +116,8 @@ class TestDataFrameRefUsage(unittest.TestCase):
         rows, cols = 100000, 100
         values = np.arange(rows * cols, dtype=np.int64).reshape((rows, cols))
         index = [i+1 for i in range(rows)]
-        columns = ['c' + str(i) for i in range(cols)]
+        columns = [i+1 for i in range(cols)]
+        # columns = ['c' + str(i) for i in range(cols)]
 
         pd_df = pd.DataFrame(values, index=index, columns=columns)
 
