@@ -120,12 +120,14 @@ def box_dataframe(typ, val, c):
     -----------------------------^^^------------------------
     llvm state:               (_, _, _)  <-- ll_df_proxy  <-- ll value (out)
     """
-    # dispatch for two usages: one for __new__.<locals>.ctor, one for pd.DF
+    # FIXME: dispatch for two usages: one for __new__.<locals>.ctor, one for pd.DF
     env_name_sub = "14StructRefProxy"
     if env_name_sub in c.env_manager.env.env_name:
         return box_struct_ref(typ, val, c)
 
-    utils = structref._Utils(c.context, c.builder, typ)
+    context, builder = c.context, c.builder
+
+    utils = structref._Utils(context, builder, typ)
     data_struct = utils.get_data_struct(val)
 
     values = _get_data_struct_attr(c, typ, data_struct, "values")
@@ -136,7 +138,7 @@ def box_dataframe(typ, val, c):
     py_index = c.box(typ.field_dict["index"], index)
     py_columns = c.box(typ.field_dict["columns"], columns)
 
-    pandas_mod_name = c.context.insert_const_string(c.builder.module, "pandas")
+    pandas_mod_name = context.insert_const_string(builder.module, "pandas")
     pandas_mod = c.pyapi.import_module_noblock(pandas_mod_name)
 
     py_df = c.pyapi.call_method(
@@ -144,6 +146,9 @@ def box_dataframe(typ, val, c):
         "DataFrame",
         (py_values, py_index, py_columns),
     )
+
+    # FIX: memory leak
+    context.nrt.decref(builder, typ, val)
 
     c.pyapi.decref(py_values)
     c.pyapi.decref(py_index)
