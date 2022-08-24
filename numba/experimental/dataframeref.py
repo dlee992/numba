@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
-from numba.core import imputils
 
 from numba import types, TypingError
+from numba.core import imputils
 from numba.core.extending import overload_method
 from numba.core.pythonapi import NativeValue, unbox, box
 from numba.experimental import structref
@@ -180,12 +180,15 @@ def ol_eq(self, val):
 
 @overload_method(DataFrameRef, "head")
 def ol_head(self, n):
-    if not isinstance(self, DataFrameRef) and not isinstance(n, types.Integer):
-        raise TypingError("unsupported type input")
+    if not isinstance(self, DataFrameRef):
+        raise TypeError(f"expected: DataFrameRef, got: {self}")
+    if not isinstance(n, types.Integer):
+        raise TypeError(f"expected: Integer, got: {n}")
 
     def impl(self, n):
         new_values = self.values[:n, :]
-        new_df = DataFrameProxy(new_values, self.index, self.columns)
+        new_index = self.index[:n]
+        new_df = DataFrameProxy(new_values, new_index, self.columns)
         return new_df
 
     return impl
