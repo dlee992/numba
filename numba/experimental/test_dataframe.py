@@ -1,3 +1,4 @@
+import os
 import time
 
 import numpy as np
@@ -33,8 +34,8 @@ class TestDataFrameRefUsage(MemoryLeakMixin, TestCase):
 
     def setUp(self):
         super().setUp()
-        self.values = np.arange(100, dtype=np.int64).reshape((10, 10))
-        self.index = self.columns = [i for i in range(10)]
+        self.values = np.arange(25, dtype=np.int64).reshape((5, 5))
+        self.index = self.columns = [i for i in range(5)]
 
     def test_box(self):
         @njit
@@ -66,6 +67,22 @@ class TestDataFrameRefUsage(MemoryLeakMixin, TestCase):
         df = pd.DataFrame(values, index=index, columns=columns)
         new_df = df_head_real(df)
         print_df(new_df)
+
+    def test_df_merge(self):
+        @njit
+        def df_merge(left, right, how, on):
+            return left.merge(right, how=how, on=on)
+
+        values, index, columns = self.values, self.index, self.columns
+
+        left = pd.DataFrame(values, index=index, columns=columns)
+        right = pd.DataFrame(values, index=index, columns=columns)
+
+        how, on = "left", [1, 3]
+        merged = df_merge(left, right, how, on)
+        expected = left.merge(right, on=on, how=how)
+        print(expected)
+        print(merged)
 
 
 if __name__ == "__main__":

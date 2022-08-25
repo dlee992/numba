@@ -1,12 +1,17 @@
 import numpy as np
 import pandas as pd
 
-from numba import types, TypingError
+from numba import types, TypingError, UnsupportedError
 from numba.core import imputils
 from numba.core.extending import overload_method
 from numba.core.pythonapi import NativeValue, unbox, box
 from numba.experimental import structref
 from numba.extending import typeof_impl
+
+
+################################################################################
+# type definition
+################################################################################
 
 
 @structref.register
@@ -20,13 +25,19 @@ class DataFrameProxy(structref.StructRefProxy):
         return structref.StructRefProxy.__new__(cls, values, index, columns)
 
 
+################################################################################
+# typeof and boxing, with utils
+################################################################################
+
+
 @typeof_impl.register(pd.DataFrame)
 def _typeof_dataframe(obj, c):
     # FIXME: numpy string array should be special handled
     values_ty = typeof_impl(obj.values, c)
     index_ty = typeof_impl(obj.index.to_numpy(), c)
     columns_ty = typeof_impl(obj.columns.to_numpy(), c)
-    fields = [('values', values_ty), ('index', index_ty), ('columns', columns_ty)]
+    fields = [('values', values_ty), ('index', index_ty),
+              ('columns', columns_ty)]
     return DataFrameRef(fields)
 
 
@@ -52,14 +63,11 @@ def unbox_dataframe(typ, obj, c):
     py_columns = _unbox_attr_to_tuple(py_df, "columns", c)
 
     # TODO: directly call DFP, rather than insert a module
-    dfp_name = c.context.insert_const_string(
-        c.builder.module, "numba.experimental.dataframeref")
+    dfp_name = c.context.insert_const_string(c.builder.module,
+                                             "numba.experimental.dataframeref")
     dfp_mod = c.pyapi.import_module_noblock(dfp_name)
-    py_df_proxy = c.pyapi.call_method(
-        dfp_mod,
-        "DataFrameProxy",
-        (py_values, py_index, py_columns),
-    )
+    py_df_proxy = c.pyapi.call_method(dfp_mod, "DataFrameProxy",
+                                      (py_values, py_index, py_columns), )
 
     mi_obj = c.pyapi.object_getattr_string(py_df_proxy, "_meminfo")
 
@@ -98,7 +106,7 @@ def box_struct_ref(typ, val, c):
     ty_pyobj = c.pyapi.unserialize(c.pyapi.serialize_object(typ))
 
     res = c.pyapi.call_function_objargs(ctor_pyfunc,
-        [ty_pyobj, boxed_meminfo], )
+                                        [ty_pyobj, boxed_meminfo], )
 
     c.pyapi.decref(ctor_pyfunc)
     c.pyapi.decref(ty_pyobj)
@@ -120,7 +128,8 @@ def box_dataframe(typ, val, c):
     -----------------------------^^^------------------------
     llvm state:               (_, _, _)  <-- ll_df_proxy  <-- ll value (out)
     """
-    # FIXME: dispatch for two usages: one for __new__.<locals>.ctor, one for pd.DF
+    # FIXME: dispatch for two usages: one for __new__.<locals>.ctor, one for
+    #  pd.DF
     env_name_sub = "14StructRefProxy"
     if env_name_sub in c.env_manager.env.env_name:
         return box_struct_ref(typ, val, c)
@@ -141,11 +150,8 @@ def box_dataframe(typ, val, c):
     pandas_mod_name = context.insert_const_string(builder.module, "pandas")
     pandas_mod = c.pyapi.import_module_noblock(pandas_mod_name)
 
-    py_df = c.pyapi.call_method(
-        pandas_mod,
-        "DataFrame",
-        (py_values, py_index, py_columns),
-    )
+    py_df = c.pyapi.call_method(pandas_mod, "DataFrame",
+                                (py_values, py_index, py_columns), )
 
     # FIX: memory leak
     context.nrt.decref(builder, typ, val)
@@ -158,24 +164,9 @@ def box_dataframe(typ, val, c):
     return py_df
 
 
-@overload_method(DataFrameRef, "eq")
-def ol_eq(self, val):
-    if not isinstance(self, DataFrameRef) and not isinstance(val, types.Integer):
-        raise TypingError("unsupported type input")
-
-    def impl(self, val):
-        # get length and width
-        values = self.values
-        rows, cols = values.shape[0], values.shape[1]
-        # iterate and assign
-        new_values = np.full((rows, cols), True)
-        for i in range(rows):
-            for j in range(cols):
-                new_values[i, j] = values[i, j] >= val
-        new_df = DataFrameProxy(new_values, self.index, self.columns)
-        return new_df
-
-    return impl
+################################################################################
+# implement various dataframe APIs
+################################################################################
 
 
 @overload_method(DataFrameRef, "head")
@@ -185,7 +176,7 @@ def ol_head(self, n):
     if not isinstance(n, types.Integer):
         raise TypeError(f"expected: Integer, got: {n}")
 
-    def impl(self, n):
+    def impl(self, n=5):
         new_values = self.values[:n, :]
         new_index = self.index[:n]
         new_df = DataFrameProxy(new_values, new_index, self.columns)
@@ -194,6 +185,63 @@ def ol_head(self, n):
     return impl
 
 
+# ignore arguments: kwargs
+# func is numba vectorized
+@overload_method(DataFrameRef, "transform")
+def ol_transform(self, func, axis=0, *args):
+    def impl(self, func, axis=0, *args):
+        new_values = func(self.values)
+        dfp = DataFrameProxy(new_values, self.index, self.columns)
+        return dfp
+
+    return impl
+
+
+# ignore arguments: kwargs
 @overload_method(DataFrameRef, "apply")
-def ol_apply(self, args):
-    pass
+def ol_apply(self, func, axis=0, raw=False, result_type=None, args=()):
+    def impl(self, func, axis=0, raw=False, result_type=None, args=()):
+        pass
+
+    return impl
+
+
+# ignore arguments:
+#   left_on=None, right_on=None, left_index=False, right_index=False,
+#   sort=False, suffixes=('_x', '_y'), copy=True, indicator=False, validate=None
+@overload_method(DataFrameRef, "merge")
+def ol_merge(self, right, how='inner', on=None):
+    if not isinstance(right, DataFrameRef):
+        raise TypeError(f"expected: DataFrameRef, got: {right}")
+
+    # if how != 'left':
+    #     raise UnsupportedError(f"expected: left, got: {how}")
+
+    def impl(self, right, how='inner', on=None):
+        self_v, right_v = self.values, right.values
+
+        rows = self_v.shape[0]
+        # columns = self_v.shape[1] + right_v.shape[1] - len(on)
+        columns = self_v.shape[1] + right_v.shape[1]
+        index_of_self = [np.where(self.columns == item)[0][0] for item in on]
+        index_of_right = [np.where(self.columns == item)[0][0] for item in on]
+        merged_v = np.empty((rows, columns), self_v.dtype)
+
+        for self_index in range(rows):
+            for right_index in range(rows):
+                matched = True
+                for item in range(len(on)):
+                    self_item = self_v[self_index, index_of_self[item]]
+                    right_item = right_v[right_index, index_of_right[item]]
+                    if self_item != right_item:
+                        matched = False
+                        break
+                if matched:
+                    split = self_v.shape[1]
+                    merged_v[self_index, :split] = self_v[self_index]
+                    merged_v[self_index, split:columns] = right_v[right_index]
+
+        merged_c = np.concatenate((self.columns, right.columns))
+        return DataFrameProxy(merged_v, self.index, merged_c)
+
+    return impl
