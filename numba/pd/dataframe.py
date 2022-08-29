@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
 
-from numba import types, TypingError, UnsupportedError
+from numba import types, TypingError, UnsupportedError, prange
 from numba.core import imputils
 from numba.core.extending import overload_method
 from numba.core.pythonapi import NativeValue, unbox, box
+from numba.core.target_extension import resolve_dispatcher_from_str, \
+    current_target
 from numba.experimental import structref
 from numba.extending import typeof_impl
 
@@ -12,6 +14,7 @@ from numba.extending import typeof_impl
 ################################################################################
 # type definition
 ################################################################################
+current_module_name = "numba.pd.dataframe"
 
 
 @structref.register
@@ -64,7 +67,7 @@ def unbox_dataframe(typ, obj, c):
 
     # TODO: directly call DFP, rather than insert a module
     dfp_name = c.context.insert_const_string(c.builder.module,
-                                             "numba.experimental.dataframeref")
+                                             current_module_name)
     dfp_mod = c.pyapi.import_module_noblock(dfp_name)
     py_df_proxy = c.pyapi.call_method(dfp_mod, "DataFrameProxy",
                                       (py_values, py_index, py_columns), )
@@ -165,6 +168,12 @@ def box_dataframe(typ, val, c):
 
 
 ################################################################################
+# dataframe getitem operations
+################################################################################
+
+
+
+################################################################################
 # implement various dataframe APIs
 ################################################################################
 
@@ -176,7 +185,7 @@ def ol_head(self, n):
     if not isinstance(n, types.Integer):
         raise TypeError(f"expected: Integer, got: {n}")
 
-    def impl(self, n=5):
+    def impl(self, n):
         new_values = self.values[:n, :]
         new_index = self.index[:n]
         new_df = DataFrameProxy(new_values, new_index, self.columns)
@@ -186,21 +195,44 @@ def ol_head(self, n):
 
 
 # ignore arguments: kwargs
-# func is numba vectorized
+# func should be numba-vectorized
 @overload_method(DataFrameRef, "transform")
 def ol_transform(self, func, axis=0, *args):
+
+    typingctx = resolve_dispatcher_from_str(
+        current_target()).targetdescr.typing_context
+
+    values = self._fields[0][1]
+    # args_type = (values.dtype, *args)
+    args_type = (values.dtype, )
+    return_type = func.get_call_type(typingctx, args_type, {}).return_type
+
     def impl(self, func, axis=0, *args):
-        new_values = func(self.values)
+        shape = self.values.shape
+        new_values = np.empty(shape, return_type)
+
+        # map func to each element in values
+        for row_index in prange(shape[0]):
+            for column_index in prange(shape[1]):
+                old_value = self.values[row_index, column_index]
+                # new_values[row_index, column_index] = func(old_value, *args)
+                new_values[row_index, column_index] = func(old_value)
+
         dfp = DataFrameProxy(new_values, self.index, self.columns)
         return dfp
 
     return impl
 
 
-# ignore arguments: kwargs
+# ignore arguments: kwargs, raw, result_type
 @overload_method(DataFrameRef, "apply")
-def ol_apply(self, func, axis=0, raw=False, result_type=None, args=()):
-    def impl(self, func, axis=0, raw=False, result_type=None, args=()):
+def ol_apply(self, func, axis=0, args=()):
+    if not isinstance(func, types.Callable):
+        raise TypeError(f"expected: Callable, got: {func}")
+
+    # TODO: need to copy Series code to here
+
+    def impl(self, func, axis=0, args=()):
         pass
 
     return impl
@@ -227,8 +259,8 @@ def ol_merge(self, right, how='inner', on=None):
         index_of_right = [np.where(self.columns == item)[0][0] for item in on]
         merged_v = np.empty((rows, columns), self_v.dtype)
 
-        for self_index in range(rows):
-            for right_index in range(rows):
+        for self_index in prange(rows):
+            for right_index in prange(rows):
                 matched = True
                 for item in range(len(on)):
                     self_item = self_v[self_index, index_of_self[item]]
