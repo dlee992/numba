@@ -2,14 +2,11 @@ import operator
 
 from llvmlite import ir, binding
 
+from numba import StdStringType
 from numba.core import cgutils
-from numba.core.types.common import Opaque
-from numba.core.datamodel import models
 from numba.core.imputils import lower_builtin
 from numba.core.pythonapi import unbox, box, NativeValue
-from numba.extending import register_model
 from numba.string import _std_string
-
 
 ################################################################################
 # type definition, registration, typeof, and boxing
@@ -21,13 +18,13 @@ binding.add_symbol("std_string_concat", _std_string.std_string_concat)
 
 
 # Opaque means a meaningful raw pointer
-class StdStringType(Opaque):
-    def __init__(self):
-        super(StdStringType, self).__init__(name='StdStringType')
+# class StdStringType(Opaque):
+#     def __init__(self):
+#         super(StdStringType, self).__init__(name='StdStringType')
 
 
-std_str_type = StdStringType()
-register_model(StdStringType)(models.OpaqueModel)
+# std_str_type = StdStringType()
+# register_model(StdStringType)(models.OpaqueModel)
 
 
 # define typeof_impl for str in numba.core.typing.typeof
@@ -67,7 +64,7 @@ def box_std_string(typ, val, c):
 ################################################################################
 
 
-@lower_builtin(operator.add, std_str_type, std_str_type)
+@lower_builtin(operator.add, StdStringType, StdStringType)
 def std_string_concat(context, builder, sig, args):
     fnty = ir.FunctionType(ir.IntType(8).as_pointer(),
                            [ir.IntType(8).as_pointer(),

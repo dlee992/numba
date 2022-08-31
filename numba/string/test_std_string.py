@@ -18,6 +18,9 @@ class TestStdString(MemoryLeakMixin, TestCase):
     def setUp(self):
         super(TestStdString, self).setUp()
 
+    def test_empty(self):
+        self.assertEqual(1, 1)
+
     def test_box(self):
         @njit
         def box(val):

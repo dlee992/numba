@@ -543,3 +543,8 @@ class UnicodeIteratorType(SimpleIteratorType):
         name = "iter_unicode"
         self.data = dtype
         super(UnicodeIteratorType, self).__init__(name, dtype)
+
+
+class StdStringType(Opaque):
+    def __init__(self):
+        super(StdStringType, self).__init__(name='StdStringType')

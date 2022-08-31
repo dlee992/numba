@@ -11,7 +11,6 @@ from .misc import *
 from .npytypes import *
 from .scalars import *
 from .function_type import *
-from ...string.std_string import StdStringType
 
 # Short names
 
