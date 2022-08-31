@@ -146,7 +146,7 @@ def _typeof_numpy_scalar(val, c):
 
 @typeof_impl.register(str)
 def _typeof_str(val, c):
-    return types.string
+    return types.std_string_type
 
 
 @typeof_impl.register(type((lambda a: a).__code__))

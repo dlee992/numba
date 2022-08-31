@@ -11,6 +11,7 @@ from .misc import *
 from .npytypes import *
 from .scalars import *
 from .function_type import *
+from ...string.std_string import StdStringType
 
 # Short names
 
@@ -24,6 +25,7 @@ undefined = Undefined('undefined')
 py2_string_type = Opaque('str')
 unicode_type = UnicodeType('unicode_type')
 string = unicode_type
+std_string_type = StdStringType()
 unknown = Dummy('unknown')
 
 code_type = Opaque('code')
