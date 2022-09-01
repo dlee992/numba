@@ -2,6 +2,7 @@ import sys
 import operator
 
 import numpy as np
+from llvmlite import ir, binding
 from llvmlite.ir import IntType, Constant
 
 from numba.core.extending import (
@@ -27,6 +28,7 @@ from numba.core.pythonapi import (
     PY_UNICODE_WCHAR_KIND,
 )
 from numba._helperlib import c_helpers
+from numba.string import _std_string
 from numba.cpython.hashing import _Py_hash_t
 from numba.core.unsafe.bytes import memcpy_region
 from numba.core.errors import TypingError
@@ -207,6 +209,36 @@ def box_unicode_str(typ, val, c):
     c.pyapi.object_hash(res)
     c.context.nrt.decref(c.builder, typ, val)
     return res
+
+
+binding.add_symbol("std_string_init", _std_string.std_string_init)
+binding.add_symbol("std_string_get_cstr", _std_string.std_string_get_cstr)
+
+
+@unbox(types.StdStringType)
+def unbox_std_string(typ, obj, c):
+    ok, buffer, size = c.pyapi.string_as_string_and_size(obj)
+
+    fnty = ir.FunctionType(
+        ir.IntType(8).as_pointer(),
+        [ir.IntType(8).as_pointer(), ir.IntType(64)])
+    fn = cgutils.get_or_insert_function(c.builder.module, fnty,
+                                        name="std_string_init")
+    ret = c.builder.call(fn, [buffer, size])
+
+    return NativeValue(ret, is_error=c.builder.not_(ok))
+
+
+@box(types.StdStringType)
+def box_std_string(typ, val, c):
+    fnty = ir.FunctionType(
+        ir.IntType(8).as_pointer(),
+        [ir.IntType(8).as_pointer()])
+    fn = cgutils.get_or_insert_function(c.builder.module, fnty,
+                                        name="std_string_get_cstr")
+    c_str = c.builder.call(fn, [val])
+    pystr = c.pyapi.string_from_string(c_str)
+    return pystr
 
 
 # HELPER FUNCTIONS
